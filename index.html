@@ -1,0 +1,1333 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#131016">
+<meta name="description" content="ジャグラー全8機種対応のベイズ推定設定判別ツール。本日のデータ判別と過去データからの台選びに対応。">
+<title>GOGO JUDGE — ジャグラー設定判別</title>
+<style>
+/* ============ ジャグラー設定判別ツール ============ */
+/* ジャグラー筐体カラー: 赤×黒×ゴールド、GOGOランプの虹色 */
+
+:root {
+  --jug-red: #e60012;
+  --jug-red-dark: #a30010;
+  --jug-gold: #ffd23f;
+  --jug-blue: #1a8fe3;
+  --jug-green: #2fbf71;
+  --bg: #131016;
+  --bg-card: #1e1a24;
+  --bg-input: #15111b;
+  --border: #3c3547;
+  --text: #f5f0ec;
+  --text-dim: #aca3b3;
+  /* 選択機種のテーマカラー（JSが機種選択時に上書き） */
+  --accent: #e4007f;
+  --accent-soft: #ff64b8;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Noto Sans JP", Meiryo, sans-serif;
+  background:
+    radial-gradient(ellipse at 50% -10%, color-mix(in srgb, var(--accent) 26%, var(--bg)) 0%, transparent 55%),
+    repeating-linear-gradient(45deg, transparent 0 34px, rgba(255,255,255,.02) 34px 36px),
+    var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  line-height: 1.6;
+  transition: background .4s;
+}
+
+/* ---------- header ---------- */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 20px 14px;
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+/* 本家風GOGOランプ: 青紫の透明カバー＋シルバーリム */
+.gogo-lamp {
+  width: 78px;
+  height: 56px;
+  border-radius: 50% / 48%;
+  background:
+    radial-gradient(circle at 50% 26%, #453a85 0%, #2b2260 50%, #191243 100%);
+  border: 3px solid #8f89b8;
+  box-shadow:
+    inset 0 6px 10px rgba(255,255,255,.14),
+    inset 0 -8px 14px rgba(0,0,0,.6),
+    0 2px 8px rgba(0,0,0,.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all .5s;
+  flex-shrink: 0;
+}
+.gogo-text {
+  font-weight: 900;
+  font-style: italic;
+  font-size: 17px;
+  letter-spacing: -.5px;
+  color: #978ce8;
+  text-shadow: 0 1px 2px rgba(0,0,0,.5);
+  transition: all .5s;
+  user-select: none;
+}
+/* ペカり演出: 白熱発光＋虹色GOGO! */
+.gogo-lamp.peka {
+  background: radial-gradient(circle at 50% 38%, #ffffff 0%, #f0eaff 38%, #beaaff 72%, #7d5fe8 100%);
+  border-color: #d4ccff;
+  box-shadow: 0 0 28px 10px rgba(150,120,255,.6), inset 0 -4px 10px rgba(90,60,200,.35);
+  animation: pekaPulse 1.4s ease-in-out infinite;
+}
+.gogo-lamp.peka .gogo-text {
+  background: linear-gradient(100deg, #ff2d2d, #ff9a00, #ffd400, #2ecc5e, #00a0e9, #8b3ff0);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  text-shadow: none;
+}
+@keyframes pekaPulse {
+  0%, 100% { box-shadow: 0 0 28px 10px rgba(150,120,255,.6),  inset 0 -4px 10px rgba(90,60,200,.35); }
+  50%      { box-shadow: 0 0 44px 16px rgba(170,140,255,.85), inset 0 -4px 10px rgba(90,60,200,.35); }
+}
+
+.title-main {
+  display: block;
+  font-size: 24px;
+  font-weight: 900;
+  background: linear-gradient(90deg, var(--accent-soft), #ffffff 45%, var(--accent-soft));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  letter-spacing: 1px;
+}
+.title-sub {
+  display: block;
+  font-size: 12px;
+  color: var(--text-dim);
+  font-weight: 600;
+  letter-spacing: 1.5px;
+}
+
+/* ---------- layout ---------- */
+.container {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 0 14px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px;
+  box-shadow: 0 4px 18px rgba(0,0,0,.35);
+}
+
+.card-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--accent-soft);
+  margin-bottom: 14px;
+  letter-spacing: .5px;
+}
+
+/* ---------- 機種選択 ---------- */
+.machine-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+.machine-btn {
+  position: relative;
+  background: var(--bg-input);
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  padding: 10px 8px 8px;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: left;
+  line-height: 1.35;
+  transition: border-color .15s, transform .1s, box-shadow .15s;
+}
+.machine-btn .m-dot {
+  display: inline-block;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  margin-right: 5px;
+  vertical-align: 1px;
+  box-shadow: 0 0 0 1.5px rgba(255,255,255,.28);
+}
+.machine-btn:hover { transform: translateY(-1px); }
+.machine-btn.active {
+  border-color: var(--m-soft, var(--accent-soft));
+  box-shadow: 0 0 0 1px var(--m-soft, var(--accent-soft)), 0 0 14px color-mix(in srgb, var(--m-soft, var(--accent-soft)) 30%, transparent);
+  background: linear-gradient(180deg, rgba(255,255,255,.05), transparent), var(--bg-input);
+}
+
+/* ---------- 入力 ---------- */
+.inputs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+.input-block label {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-dim);
+  margin-bottom: 5px;
+}
+.optional {
+  font-size: 10px;
+  color: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent-soft) 50%, transparent);
+  border-radius: 20px;
+  padding: 0 6px;
+  margin-left: 4px;
+  font-weight: 600;
+}
+input[type="number"] {
+  width: 100%;
+  background: var(--bg-input);
+  border: 1.5px solid var(--border);
+  border-radius: 9px;
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 700;
+  padding: 9px 10px;
+  outline: none;
+  transition: border-color .15s;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; }
+input[type="number"]:focus { border-color: var(--accent-soft); }
+
+.counter-row { display: flex; gap: 6px; }
+.counter-row input { min-width: 0; text-align: center; padding-left: 4px; padding-right: 4px; }
+.cnt-btn {
+  width: 42px;
+  flex-shrink: 0;
+  border-radius: 9px;
+  border: 1.5px solid var(--border);
+  background: linear-gradient(180deg, #2b2436, #1b1622);
+  color: var(--accent-soft);
+  font-size: 18px;
+  font-weight: 900;
+  cursor: pointer;
+  transition: filter .1s, transform .05s;
+}
+.cnt-btn:active { transform: scale(.94); filter: brightness(1.4); }
+
+.prior-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+.prior-row label { font-size: 12.5px; font-weight: 700; color: var(--text-dim); }
+select {
+  background: var(--bg-input);
+  border: 1.5px solid var(--border);
+  border-radius: 9px;
+  color: var(--text);
+  font-size: 13.5px;
+  font-weight: 700;
+  padding: 8px 10px;
+  outline: none;
+}
+.reset-btn {
+  margin-left: auto;
+  background: transparent;
+  border: 1.5px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 9px;
+  padding: 7px 14px;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.reset-btn:hover { border-color: var(--accent-soft); color: var(--text); }
+
+.hint { font-size: 11px; color: var(--text-dim); margin-top: 10px; }
+
+/* ---------- 結果 ---------- */
+.result-card { border-color: color-mix(in srgb, var(--accent-soft) 40%, transparent); }
+.no-data {
+  color: var(--text-dim);
+  font-size: 13.5px;
+  text-align: center;
+  padding: 18px 6px;
+}
+.hidden { display: none; }
+
+.verdict-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.verdict-box {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  text-align: center;
+}
+.verdict-label { font-size: 11px; color: var(--text-dim); font-weight: 700; }
+.verdict-value { font-size: 21px; font-weight: 900; color: var(--accent-soft); margin-top: 2px; }
+
+/* 設定バー: 1〜6 で色分け（低=青系 → 高=赤金系） */
+.bars { display: flex; flex-direction: column; gap: 8px; }
+.bar-row { display: grid; grid-template-columns: 52px 1fr 62px; align-items: center; gap: 10px; }
+.bar-label { font-size: 13px; font-weight: 900; text-align: center; }
+.bar-track {
+  height: 22px;
+  background: var(--bg-input);
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.bar-fill {
+  height: 100%;
+  border-radius: 5px 0 0 5px;
+  transition: width .45s cubic-bezier(.2,.8,.3,1);
+  min-width: 0;
+}
+.bar-pct { font-size: 13.5px; font-weight: 800; text-align: right; font-variant-numeric: tabular-nums; }
+
+.s1 { color: #7f9bb3; } .f1 { background: linear-gradient(90deg,#4a6a85,#7f9bb3); }
+.s2 { color: #59b8d8; } .f2 { background: linear-gradient(90deg,#2f7d99,#59b8d8); }
+.s3 { color: #2fbf71; } .f3 { background: linear-gradient(90deg,#1d8a4e,#2fbf71); }
+.s4 { color: #ffd23f; } .f4 { background: linear-gradient(90deg,#c99a12,#ffd23f); }
+.s5 { color: #ff8a3d; } .f5 { background: linear-gradient(90deg,#d95f10,#ff8a3d); }
+.s6 { color: #ff4b5c; } .f6 { background: linear-gradient(90deg,#c40017,#ff4b5c); }
+
+.actual-stats { margin-top: 20px; }
+.actual-stats h3 { font-size: 13px; color: var(--text-dim); margin-bottom: 8px; }
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px;
+}
+.stat-chip {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 8px 10px;
+  text-align: center;
+}
+.stat-chip .k { font-size: 10.5px; color: var(--text-dim); font-weight: 700; display: block; }
+.stat-chip .v { font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums; }
+
+.sample-note { font-size: 11.5px; color: var(--accent-soft); margin-top: 12px; }
+
+/* ---------- スペック表 ---------- */
+.spec-machine { color: var(--text); font-size: 13px; margin-left: 6px; }
+.table-wrap { overflow-x: auto; }
+.spec-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  min-width: 480px;
+  font-variant-numeric: tabular-nums;
+}
+.spec-table th, .spec-table td {
+  padding: 7px 8px;
+  text-align: center;
+  border-bottom: 1px solid var(--border);
+}
+.spec-table th {
+  color: var(--text-dim);
+  font-size: 11.5px;
+  letter-spacing: .5px;
+}
+.spec-table td:first-child { font-weight: 900; }
+.spec-table tr.nearest td {
+  background: color-mix(in srgb, var(--accent-soft) 14%, transparent);
+  color: var(--accent-soft);
+}
+.spec-table tr.nearest td:first-child::after {
+  content: " ◀";
+  font-size: 10px;
+}
+
+/* ---------- モード切替タブ ---------- */
+.mode-tabs {
+  display: flex;
+  gap: 8px;
+}
+.mode-tab {
+  flex: 1;
+  background: var(--bg-card);
+  border: 1.5px solid var(--border);
+  border-radius: 12px 12px 0 0;
+  color: var(--text-dim);
+  font-size: 13.5px;
+  font-weight: 800;
+  padding: 11px 8px;
+  cursor: pointer;
+  transition: color .15s, border-color .15s, background .15s;
+}
+.mode-tab.active {
+  color: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent-soft) 55%, transparent);
+  border-bottom-color: transparent;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 9%, transparent), transparent), var(--bg-card);
+}
+
+/* ---------- 詳細判別要素 ---------- */
+.detail-box {
+  margin-top: 14px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.detail-box summary {
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 800;
+  color: var(--accent-soft);
+  list-style: none;
+  user-select: none;
+}
+.detail-box summary::-webkit-details-marker { display: none; }
+.detail-grid { margin-top: 12px; }
+.input-block.unavail { opacity: .35; }
+.input-block.unavail input, .input-block.unavail .cnt-btn { cursor: not-allowed; }
+
+/* ---------- 過去データモード ---------- */
+.day-rows { display: flex; flex-direction: column; gap: 8px; }
+.day-row {
+  display: grid;
+  grid-template-columns: 52px 1.4fr 1fr 1fr 1fr 34px;
+  gap: 6px;
+  align-items: center;
+}
+.day-label {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--accent-soft);
+  text-align: center;
+}
+.day-row input { font-size: 14px; padding: 8px 8px; }
+.day-del {
+  width: 34px; height: 34px;
+  border-radius: 8px;
+  border: 1.5px solid var(--border);
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 13px;
+  cursor: pointer;
+}
+.day-del:hover { border-color: var(--accent-soft); color: var(--accent-soft); }
+.add-day-btn {
+  background: linear-gradient(180deg, #2b2436, #1b1622);
+  border: 1.5px solid var(--border);
+  color: var(--accent-soft);
+  border-radius: 9px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.add-day-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+.past-comment {
+  background: var(--bg-input);
+  border: 1px solid color-mix(in srgb, var(--accent-soft) 35%, transparent);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 13.5px;
+  font-weight: 700;
+  margin-bottom: 16px;
+}
+.day-results { display: flex; flex-direction: column; gap: 8px; }
+.day-result {
+  display: grid;
+  grid-template-columns: 48px 64px 1fr 56px 76px;
+  gap: 8px;
+  align-items: center;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 8px 10px;
+}
+.dr-label { font-size: 12px; font-weight: 800; color: var(--accent-soft); }
+.dr-games { font-size: 12px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.dr-top { font-size: 13px; font-weight: 900; text-align: center; }
+.dr-p4 { font-size: 11.5px; color: var(--text-dim); text-align: right; font-variant-numeric: tabular-nums; }
+.mini-bar {
+  display: flex;
+  height: 12px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #0d0608;
+}
+.mini-seg { height: 100%; }
+
+@media (max-width: 560px) {
+  .day-row { grid-template-columns: 44px 1.3fr 1fr 1fr 1fr 30px; }
+  .day-row input { font-size: 12.5px; padding: 7px 5px; }
+  .day-result { grid-template-columns: 44px 56px 1fr 50px 66px; padding: 7px 8px; }
+}
+
+/* ---------- footer ---------- */
+.footer {
+  font-size: 10.5px;
+  color: var(--text-dim);
+  text-align: center;
+  padding: 8px 12px 0;
+  line-height: 1.8;
+}
+
+@media (max-width: 520px) {
+  .title-main { font-size: 19px; }
+  .machine-list { grid-template-columns: repeat(2, 1fr); }
+  .inputs-grid { grid-template-columns: repeat(2, 1fr); }
+  .bar-row { grid-template-columns: 40px 1fr 56px; }
+  .cnt-btn { width: 32px; font-size: 15px; }
+  .counter-row input { font-size: 15px; }
+}
+
+</style>
+</head>
+<body>
+<header class="header">
+  <div class="lamp-wrap">
+    <div class="gogo-lamp" id="gogoLamp">
+      <span class="gogo-text">GOGO!</span>
+    </div>
+  </div>
+  <h1 class="title"><span class="title-main">ジャグラー設定判別</span><span class="title-sub">GOGO JUDGE — ベイズ推定で高精度判別</span></h1>
+</header>
+
+<main class="container">
+
+  <!-- 機種選択 -->
+  <section class="card">
+    <h2 class="card-title">① 機種を選ぶ</h2>
+    <div class="machine-list" id="machineList"></div>
+    <div class="prior-row">
+      <label for="prior">事前想定（ホール状況）</label>
+      <select id="prior">
+        <option value="flat">全設定フラット（基本はコレ）</option>
+        <option value="normal">通常営業（低設定多め）</option>
+        <option value="event">イベント・特定日（高設定期待）</option>
+      </select>
+    </div>
+  </section>
+
+  <!-- モード切替 -->
+  <nav class="mode-tabs">
+    <button class="mode-tab active" data-mode="today">本日のデータで判別</button>
+    <button class="mode-tab" data-mode="past">過去データから台選び</button>
+  </nav>
+
+  <!-- ============ 本日モード ============ -->
+  <div id="todayMode">
+  <section class="card">
+    <h2 class="card-title">② データを入力</h2>
+    <div class="inputs-grid">
+      <div class="input-block">
+        <label for="games">総回転数（G）</label>
+        <input type="number" id="games" inputmode="numeric" min="0" placeholder="例: 3000">
+      </div>
+      <div class="input-block">
+        <label for="big">BIG回数</label>
+        <div class="counter-row">
+          <button class="cnt-btn minus" data-target="big">−</button>
+          <input type="number" id="big" inputmode="numeric" min="0" placeholder="0">
+          <button class="cnt-btn plus" data-target="big">＋</button>
+        </div>
+      </div>
+      <div class="input-block">
+        <label for="reg">REG回数</label>
+        <div class="counter-row">
+          <button class="cnt-btn minus" data-target="reg">−</button>
+          <input type="number" id="reg" inputmode="numeric" min="0" placeholder="0">
+          <button class="cnt-btn plus" data-target="reg">＋</button>
+        </div>
+      </div>
+      <div class="input-block">
+        <label for="grape">ぶどう回数 <span class="optional">任意</span></label>
+        <div class="counter-row">
+          <button class="cnt-btn minus" data-target="grape">−</button>
+          <input type="number" id="grape" inputmode="numeric" min="0">
+          <button class="cnt-btn plus" data-target="grape">＋</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 詳細判別要素 -->
+    <details class="detail-box" id="detailBox">
+      <summary>▼ 詳細判別要素を入力（チェリー・単独/重複の内訳）— 入力するほど精度UP</summary>
+      <div class="inputs-grid detail-grid">
+        <div class="input-block" id="blk-cherry">
+          <label for="cherry">チェリー回数（総数） <span class="optional">任意</span></label>
+          <div class="counter-row">
+            <button class="cnt-btn minus" data-target="cherry">−</button>
+            <input type="number" id="cherry" inputmode="numeric" min="0">
+            <button class="cnt-btn plus" data-target="cherry">＋</button>
+          </div>
+        </div>
+        <div class="input-block" id="blk-soloBig">
+          <label for="soloBig">単独BIG回数 <span class="optional">任意</span></label>
+          <div class="counter-row">
+            <button class="cnt-btn minus" data-target="soloBig">−</button>
+            <input type="number" id="soloBig" inputmode="numeric" min="0">
+            <button class="cnt-btn plus" data-target="soloBig">＋</button>
+          </div>
+        </div>
+        <div class="input-block" id="blk-chBig">
+          <label for="chBig">チェリー重複BIG <span class="optional">任意</span></label>
+          <div class="counter-row">
+            <button class="cnt-btn minus" data-target="chBig">−</button>
+            <input type="number" id="chBig" inputmode="numeric" min="0">
+            <button class="cnt-btn plus" data-target="chBig">＋</button>
+          </div>
+        </div>
+        <div class="input-block" id="blk-soloReg">
+          <label for="soloReg">単独REG回数 <span class="optional">設定差大</span></label>
+          <div class="counter-row">
+            <button class="cnt-btn minus" data-target="soloReg">−</button>
+            <input type="number" id="soloReg" inputmode="numeric" min="0">
+            <button class="cnt-btn plus" data-target="soloReg">＋</button>
+          </div>
+        </div>
+        <div class="input-block" id="blk-chReg">
+          <label for="chReg">チェリー重複REG <span class="optional">任意</span></label>
+          <div class="counter-row">
+            <button class="cnt-btn minus" data-target="chReg">−</button>
+            <input type="number" id="chReg" inputmode="numeric" min="0">
+            <button class="cnt-btn plus" data-target="chReg">＋</button>
+          </div>
+        </div>
+      </div>
+      <p class="hint" id="detailAvail"></p>
+    </details>
+
+    <div class="prior-row">
+      <button id="resetBtn" class="reset-btn">リセット</button>
+    </div>
+    <p class="hint">※ 総回転数はデータカウンターの通常時ゲーム数を入力。ぶどう・チェリーは自分でカウントした場合のみ入力してください。内訳（単独/重複）は判明している分だけの入力でOKです。</p>
+  </section>
+
+  <!-- 判別結果 -->
+  <section class="card result-card">
+    <h2 class="card-title">③ 判別結果</h2>
+    <div id="noData" class="no-data">総回転数とボーナス回数を入力すると、設定ごとの期待度をリアルタイム計算します。</div>
+    <div id="resultBody" class="hidden">
+      <div class="verdict-row">
+        <div class="verdict-box">
+          <div class="verdict-label">最有力</div>
+          <div class="verdict-value" id="topSetting">-</div>
+        </div>
+        <div class="verdict-box">
+          <div class="verdict-label">設定4以上</div>
+          <div class="verdict-value" id="p4plus">-</div>
+        </div>
+        <div class="verdict-box">
+          <div class="verdict-label">設定5・6</div>
+          <div class="verdict-value" id="p56">-</div>
+        </div>
+        <div class="verdict-box">
+          <div class="verdict-label">期待機械割</div>
+          <div class="verdict-value" id="expPayout">-</div>
+        </div>
+      </div>
+
+      <div class="bars" id="bars"></div>
+
+      <div class="actual-stats">
+        <h3>実測値</h3>
+        <div class="stats-grid" id="actualStats"></div>
+      </div>
+      <p class="sample-note" id="sampleNote"></p>
+    </div>
+  </section>
+  </div><!-- /todayMode -->
+
+  <!-- ============ 過去データモード ============ -->
+  <div id="pastMode" class="hidden">
+  <section class="card">
+    <h2 class="card-title">② 過去の最終データを入力</h2>
+    <p class="hint" style="margin:0 0 12px">前日以前の「最終ゲーム数とボーナス回数」を入力すると、その台に高設定が使われていたかを日ごとに推定し、台の傾向を予想します。BIG/REGが分からない日は合算回数だけでもOK。</p>
+    <div class="day-rows" id="dayRows"></div>
+    <div class="prior-row">
+      <button id="addDayBtn" class="add-day-btn">＋ 日を追加</button>
+      <button id="pastResetBtn" class="reset-btn">リセット</button>
+    </div>
+  </section>
+
+  <section class="card result-card">
+    <h2 class="card-title">③ 台の傾向予想</h2>
+    <div id="pastNoData" class="no-data">過去日のデータを1日分以上入力すると、高設定投入傾向を予想します。</div>
+    <div id="pastResultBody" class="hidden">
+      <div class="verdict-row">
+        <div class="verdict-box">
+          <div class="verdict-label">高設定(4+)投入率</div>
+          <div class="verdict-value" id="pastP4avg">-</div>
+        </div>
+        <div class="verdict-box">
+          <div class="verdict-label">平均期待機械割</div>
+          <div class="verdict-value" id="pastPayoutAvg">-</div>
+        </div>
+        <div class="verdict-box">
+          <div class="verdict-label">据え置き想定なら</div>
+          <div class="verdict-value" id="pastCombinedTop">-</div>
+        </div>
+      </div>
+      <div class="past-comment" id="pastComment"></div>
+      <div class="day-results" id="dayResults"></div>
+      <p class="hint">※「据え置き想定」は全日同一設定と仮定して全データを合算した判別です。日ごとに設定変更される店では「投入率」を参考にしてください。</p>
+    </div>
+  </section>
+  </div><!-- /pastMode -->
+
+  <!-- スペック表 -->
+  <section class="card">
+    <h2 class="card-title">④ 機種スペック表 <span class="spec-machine" id="specMachineName"></span></h2>
+    <div class="table-wrap">
+      <table class="spec-table" id="specTable">
+        <thead></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p class="hint">※ 本日モードでは最有力設定の行がハイライトされます。単独/重複・ぶどう・チェリーは解析推測値です。</p>
+  </section>
+
+  <footer class="footer">
+    <p>確率計算はベイズ推定（二項・多項分布モデル）による理論値です。実戦の参考情報であり、設定を保証するものではありません。</p>
+    <p>のめり込みに注意し、余裕をもった遊技を。</p>
+  </footer>
+</main>
+<script>
+/* ============================================================
+ * ジャグラー設定判別ツール — ベイズ推定エンジン v2
+ *
+ * モデル:
+ *   ・BIG/REG: 1ゲームごとの独立試行（多項分布）
+ *   ・単独/チェリー重複の内訳: ボーナス総数を条件とした多項分布
+ *   ・ぶどう/チェリー: 二項分布
+ *   これらの尤度 × 事前分布 → 事後確率 P(設定k | データ)
+ *
+ * 過去データモード:
+ *   日ごとに事後確率を計算して高設定投入傾向を推定。
+ *   据え置き想定では全日の対数尤度を合算して単一の事後確率を計算。
+ * ============================================================ */
+
+// ---- 機種データ（設定1〜6）----
+// 各値は「1/◯◯」の分母。solo/ch 系は解析推測値（未判明機種は null）
+// color: 実機筐体のテーマカラー / soft: 暗背景でも読める明るめの派生色
+const MACHINES = [
+  {
+    id: "myjug5", name: "マイジャグラーV", color: "#e4007f", soft: "#ff64b8",
+    big:    [273.1, 270.8, 266.4, 254.0, 240.1, 229.1],
+    reg:    [409.6, 385.5, 336.1, 290.0, 268.6, 229.1],
+    soloBig:[420.10, 414.78, 404.54, 376.64, 348.60, 341.33],
+    chBig:  [1365.33, 1365.33, 1365.33, 1365.33, 1337.47, 1129.93],
+    soloReg:[655.36, 595.78, 496.48, 404.54, 390.10, 327.68],
+    chReg:  [1092.27, 1092.27, 1040.25, 1024.00, 862.32, 762.05],
+    grape:  [5.90, 5.85, 5.80, 5.78, 5.76, 5.66],
+    cherry: [38.10, 38.10, 36.82, 35.62, 35.62, 35.62],
+    payout: [97.0, 98.0, 99.9, 102.8, 105.3, 109.4],
+  },
+  {
+    id: "neoim", name: "ネオアイムジャグラーEX", color: "#e60012", soft: "#ff6a6a",
+    big:    [273.1, 269.7, 269.7, 259.0, 259.0, 255.0],
+    reg:    [439.8, 399.6, 331.0, 315.1, 255.0, 255.0],
+    soloBig:[389.2, 381.5, 381.5, 370.0, 370.0, 361.7],
+    chBig:  [915.8, 920.0, 920.0, 863.2, 863.2, 864.1],
+    soloReg:[633.4, 568.7, 471.4, 446.3, 361.7, 361.7],
+    chReg:  [1439.3, 1344.1, 1111.1, 1071.1, 864.1, 864.1],
+    grape:  [6.02, 6.02, 6.02, 6.02, 6.02, 5.78],
+    cherry: [32.2, 32.2, 32.2, 32.2, 32.2, 32.2],
+    payout: [97.0, 98.0, 99.5, 101.1, 103.3, 105.5],
+  },
+  {
+    id: "gogo3", name: "ゴーゴージャグラー3", color: "#f2c300", soft: "#ffd94d",
+    big:    [259.0, 258.0, 257.0, 254.0, 247.3, 234.9],
+    reg:    [354.2, 332.7, 306.2, 268.6, 247.3, 234.9],
+    soloBig:[379.1, 376.9, 378.6, 378.7, 369.5, 352.4],
+    chBig:  [1456.4, 1456.4, 1456.4, 1394.4, 1394.4, 1310.7],
+    soloReg:[472.3, 447.4, 417.8, 362.9, 331.0, 317.2],
+    chReg:  [1424.7, 1310.7, 1170.3, 1110.8, 1024.0, 936.2],
+    grape:  [6.25, 6.20, 6.15, 6.07, 6.00, 5.92],
+    cherry: [33.56, 33.47, 33.32, 33.15, 33.10, 32.97],
+    payout: [97.2, 98.2, 99.4, 101.6, 103.8, 106.5],
+  },
+  {
+    id: "funky2", name: "ファンキージャグラー2", color: "#2d2140", soft: "#a58fd8",
+    big:    [266.4, 259.0, 256.0, 249.2, 240.1, 219.9],
+    reg:    [439.8, 407.1, 366.1, 322.8, 299.3, 262.1],
+    soloBig:[357.9, 345.4, 353.1, 330.6, 328.5, 295.4],
+    chBig:  [1048.3, 1029.0, 971.8, 995.9, 923.9, 917.1],
+    soloReg:[650.7, 568.0, 500.1, 444.7, 410.0, 345.8],
+    chReg:  [1478.0, 1390.9, 1278.5, 1210.4, 1241.2, 1061.9],
+    grape:  [5.94, 5.92, 5.88, 5.83, 5.76, 5.67],
+    cherry: [35.62, 35.62, 35.62, 35.62, 35.62, 35.62],
+    payout: [97.0, 98.5, 99.8, 102.0, 104.3, 109.0],
+  },
+  {
+    id: "happy8", name: "ハッピージャグラーV III", color: "#0c6b3c", soft: "#3fc981",
+    big:    [273.1, 270.8, 263.2, 254.0, 239.2, 226.0],
+    reg:    [397.2, 362.1, 332.7, 300.6, 273.1, 256.0],
+    soloBig:[394.2, 387.8, 371.2, 379.4, 349.4, 323.6],
+    chBig:  [1245.6, 1256.4, 1263.2, 1015.9, 1002.9, 991.7],
+    soloReg:[635.5, 561.9, 532.4, 473.7, 432.5, 426.6],
+    chReg:  [1059.3, 1018.4, 1111.1, 887.3, 819.4, 731.4],
+    grape:  [6.05, 6.01, 5.98, 5.83, 5.81, 5.79],
+    cherry: [62.24, 62.47, 62.95, 64.00, 64.57, 65.34],
+    payout: [97.0, 98.1, 99.9, 102.9, 105.8, 108.4],
+  },
+  {
+    id: "mrjug", name: "ミスタージャグラー", color: "#101010", soft: "#cfcfcf",
+    big:    [268.6, 267.5, 260.1, 249.2, 240.9, 237.4],
+    reg:    [374.5, 354.2, 331.0, 291.3, 257.0, 237.4],
+    soloBig: null, chBig: null, soloReg: null, chReg: null,
+    grape:  [6.29, 6.22, 6.15, 6.09, 6.02, 5.96],
+    cherry: [37.24, 37.24, 37.24, 37.24, 37.24, 37.24],
+    payout: [97.0, 98.0, 99.8, 102.7, 105.5, 107.3],
+  },
+  {
+    id: "girlsss", name: "ジャグラーガールズSS", color: "#2ecc5e", soft: "#7ded9e",
+    big:    [273.1, 270.8, 260.1, 250.1, 243.6, 226.0],
+    reg:    [381.0, 350.5, 316.6, 281.3, 270.8, 252.1],
+    soloBig: null, chBig: null, soloReg: null, chReg: null,
+    grape:  [5.98, 5.98, 5.98, 5.98, 5.88, 5.83],
+    cherry: [33.56, 33.47, 33.21, 33.15, 33.10, 32.97],
+    payout: [97.0, 97.9, 99.9, 102.1, 104.0, 107.5],
+  },
+  {
+    id: "ultramiracle", name: "ウルトラミラクルジャグラー", color: "#7a2fc0", soft: "#b57ce8",
+    big:    [267.5, 261.1, 256.0, 242.7, 233.2, 216.3],
+    reg:    [425.6, 402.1, 350.5, 322.8, 297.9, 277.7],
+    soloBig:[333.65, 333.32, 328.76, 310.66, 304.33, 281.78],
+    chBig:  null,
+    soloReg:[595.84, 545.71, 489.59, 436.46, 415.90, 379.91],
+    chReg:  null,
+    grape:  [5.93, 5.93, 5.93, 5.93, 5.87, 5.81],
+    cherry: [35.1, 35.0, 34.8, 34.7, 33.5, 33.0],
+    payout: [97.0, 98.1, 99.8, 102.1, 104.5, 108.1],
+  },
+];
+
+// ---- 事前分布プリセット ----
+const PRIORS = {
+  flat:   [1, 1, 1, 1, 1, 1],
+  normal: [0.38, 0.22, 0.16, 0.10, 0.08, 0.06],  // 通常営業: 低設定中心
+  event:  [0.15, 0.13, 0.14, 0.18, 0.19, 0.21],  // 特定日: 高設定に厚め
+};
+
+// ---- 状態 ----
+let currentMachine = MACHINES[0];
+let currentMode = "today";
+let pastDays = [];  // [{games:"", big:"", reg:"", combo:""}]
+const MAX_DAYS = 7;
+
+// ---- DOM ----
+const $ = (id) => document.getElementById(id);
+const machineListEl = $("machineList");
+const priorEl = $("prior");
+const todayFieldIds = ["games", "big", "reg", "grape", "cherry", "soloBig", "chBig", "soloReg", "chReg"];
+
+// ============ 判別エンジン ============
+
+// 1日分データの設定別対数尤度。data の各値は number か null（未入力）
+// data: {games, big, reg, combo, grape, cherry, soloBig, chBig, soloReg, chReg}
+function dayLogLik(machine, d) {
+  const G = d.games;
+  const out = [];
+  for (let s = 0; s < 6; s++) {
+    const pB = 1 / machine.big[s];
+    const pR = 1 / machine.reg[s];
+    let ll = 0;
+
+    if (d.big !== null || d.reg !== null) {
+      const b = d.big ?? 0, r = d.reg ?? 0;
+      // ボーナス: 多項分布（BIG / REG / ハズレ）
+      ll += b * Math.log(pB) + r * Math.log(pR) + (G - b - r) * Math.log(1 - pB - pR);
+      // 内訳: ボーナス総数を条件とした多項分布（判明分のみ使用）
+      ll += breakdownLL(machine.soloBig, machine.chBig, s, b, d.soloBig, d.chBig, pB);
+      ll += breakdownLL(machine.soloReg, machine.chReg, s, r, d.soloReg, d.chReg, pR);
+    } else if (d.combo !== null) {
+      // 合算回数しか分からない日
+      const pT = pB + pR;
+      ll += d.combo * Math.log(pT) + (G - d.combo) * Math.log(1 - pT);
+    }
+
+    if (d.grape !== null && machine.grape) {
+      const p = 1 / machine.grape[s];
+      ll += d.grape * Math.log(p) + (G - d.grape) * Math.log(1 - p);
+    }
+    if (d.cherry !== null && machine.cherry) {
+      // 総チェリー = 非当選チェリー + ボーナス重複チェリー（データがある機種のみ加算）
+      let p = 1 / machine.cherry[s];
+      if (machine.chBig) p += 1 / machine.chBig[s];
+      if (machine.chReg) p += 1 / machine.chReg[s];
+      ll += d.cherry * Math.log(p) + (G - d.cherry) * Math.log(1 - p);
+    }
+    out.push(ll);
+  }
+  return out;
+}
+
+// ボーナス総数 total を条件に、単独/チェリー重複の内訳が従う多項分布の対数尤度
+function breakdownLL(soloArr, chArr, s, total, soloCnt, chCnt, pTotal) {
+  if (total <= 0) return 0;
+  let ll = 0, usedP = 0, usedN = 0;
+  if (soloCnt !== null && soloArr) {
+    const q = Math.min((1 / soloArr[s]) / pTotal, 0.999);
+    ll += soloCnt * Math.log(q);
+    usedP += q; usedN += soloCnt;
+  }
+  if (chCnt !== null && chArr) {
+    const q = Math.min((1 / chArr[s]) / pTotal, 0.999);
+    ll += chCnt * Math.log(q);
+    usedP += q; usedN += chCnt;
+  }
+  const rem = total - usedN;
+  if (usedN > 0 && rem > 0) ll += rem * Math.log(Math.max(1 - usedP, 1e-9));
+  return ll;
+}
+
+// 対数尤度配列（複数日なら合算済み）→ 事後確率
+function posteriorFromLL(logL, priorKey) {
+  const prior = PRIORS[priorKey] || PRIORS.flat;
+  const maxLL = Math.max(...logL);
+  const w = logL.map((ll, s) => prior[s] * Math.exp(ll - maxLL));
+  const t = w.reduce((a, b) => a + b, 0);
+  return w.map((x) => x / t);
+}
+
+// 入力チェック。エラーなら文字列を返す
+function validateDay(machine, d) {
+  if (!(d.games > 0)) return null; // 未入力扱い
+  const b = d.big ?? 0, r = d.reg ?? 0;
+  if (d.big !== null || d.reg !== null) {
+    if (b + r > d.games) return "ボーナス合計が総回転数を超えています";
+    if ((d.soloBig ?? 0) + (d.chBig ?? 0) > b) return "BIGの内訳がBIG回数を超えています";
+    if ((d.soloReg ?? 0) + (d.chReg ?? 0) > r) return "REGの内訳がREG回数を超えています";
+  } else if (d.combo !== null) {
+    if (d.combo > d.games) return "合算回数が総回転数を超えています";
+  } else {
+    return null; // ボーナス情報なし → 未入力扱い
+  }
+  if (d.grape !== null && d.grape > d.games) return "ぶどう回数が総回転数を超えています";
+  if (d.cherry !== null && d.cherry > d.games) return "チェリー回数が総回転数を超えています";
+  return "";
+}
+
+function summarize(post, machine) {
+  let topIdx = 0;
+  post.forEach((p, i) => { if (p > post[topIdx]) topIdx = i; });
+  return {
+    topIdx,
+    p4plus: post[3] + post[4] + post[5],
+    p56: post[4] + post[5],
+    expPayout: post.reduce((a, p, i) => a + p * machine.payout[i], 0),
+  };
+}
+
+// ============ UI 共通 ============
+// 選択機種の筐体カラーをアプリ全体のテーマに反映
+function applyTheme(m) {
+  const root = document.documentElement.style;
+  root.setProperty("--accent", m.color);
+  root.setProperty("--accent-soft", m.soft);
+}
+
+function buildMachineList() {
+  machineListEl.innerHTML = "";
+  MACHINES.forEach((m) => {
+    const btn = document.createElement("button");
+    btn.className = "machine-btn" + (m.id === currentMachine.id ? " active" : "");
+    btn.style.setProperty("--m-color", m.color);
+    btn.style.setProperty("--m-soft", m.soft);
+    btn.innerHTML = `<span class="m-dot" style="background:${m.color}"></span>${m.name}`;
+    btn.addEventListener("click", () => {
+      currentMachine = m;
+      applyTheme(m);
+      buildMachineList();
+      updateDetailAvailability();
+      updateAll();
+      save();
+    });
+    machineListEl.appendChild(btn);
+  });
+}
+
+function fmtInv(denom) {
+  return "1/" + (denom >= 100 ? denom.toFixed(1) : denom.toFixed(2));
+}
+
+function buildSpecTable(nearestIdx) {
+  $("specMachineName").textContent = "— " + currentMachine.name;
+  const m = currentMachine;
+  const cols = [["設定", null], ["BIG", "big"], ["REG", "reg"], ["合算", "__total"]];
+  if (m.soloReg) cols.push(["単独REG", "soloReg"]);
+  if (m.chReg) cols.push(["チェリーREG", "chReg"]);
+  cols.push(["ぶどう", "grape"]);
+  if (m.cherry) cols.push(["チェリー", "cherry"]);
+  cols.push(["機械割", "__payout"]);
+
+  $("specTable").querySelector("thead").innerHTML =
+    "<tr>" + cols.map(([h]) => `<th>${h}</th>`).join("") + "</tr>";
+
+  const tbody = $("specTable").querySelector("tbody");
+  tbody.innerHTML = "";
+  for (let s = 0; s < 6; s++) {
+    const tr = document.createElement("tr");
+    if (s === nearestIdx) tr.className = "nearest";
+    tr.innerHTML = cols.map(([h, key]) => {
+      if (key === null) return `<td class="s${s + 1}">${s + 1}</td>`;
+      if (key === "__total") return `<td>${fmtInv(1 / (1 / m.big[s] + 1 / m.reg[s]))}</td>`;
+      if (key === "__payout") return `<td>${m.payout[s].toFixed(1)}%</td>`;
+      return `<td>${fmtInv(m[key][s])}</td>`;
+    }).join("");
+    tbody.appendChild(tr);
+  }
+}
+
+function readIntFrom(el) {
+  const v = el.value.trim();
+  if (v === "") return null;
+  const n = parseInt(v, 10);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+// 機種ごとに使える詳細入力を出し分け
+function updateDetailAvailability() {
+  const m = currentMachine;
+  const avail = {
+    cherry: !!m.cherry,
+    soloBig: !!m.soloBig, chBig: !!m.chBig,
+    soloReg: !!m.soloReg, chReg: !!m.chReg,
+  };
+  Object.entries(avail).forEach(([k, ok]) => {
+    const blk = $("blk-" + k);
+    blk.classList.toggle("unavail", !ok);
+    blk.querySelectorAll("input,button").forEach((el) => (el.disabled = !ok));
+  });
+  const notes = [];
+  if (!m.soloReg && !m.cherry) notes.push("この機種はチェリー・単独/重複の解析値が未判明のため、内訳入力は使えません。");
+  else if (!m.soloReg) notes.push("この機種は単独/重複ボーナスの解析値が未判明です。");
+  else if (!m.chReg) notes.push("この機種はチェリー重複の解析値が未判明のため、単独ボーナスのみ入力できます。");
+  $("detailAvail").textContent = notes.join(" ") || "内訳は判明している分だけ入力すればOK（例: 単独REGだけ）。残りは自動的に「不明」として扱います。";
+}
+
+// ============ 本日モード ============
+function readTodayData() {
+  const d = {};
+  d.games = readIntFrom($("games")) ?? 0;
+  d.big = readIntFrom($("big"));
+  d.reg = readIntFrom($("reg"));
+  d.combo = null;
+  d.grape = readIntFrom($("grape"));
+  const m = currentMachine;
+  d.cherry = m.cherry ? readIntFrom($("cherry")) : null;
+  d.soloBig = m.soloBig ? readIntFrom($("soloBig")) : null;
+  d.chBig = m.chBig ? readIntFrom($("chBig")) : null;
+  d.soloReg = m.soloReg ? readIntFrom($("soloReg")) : null;
+  d.chReg = m.chReg ? readIntFrom($("chReg")) : null;
+  // 本日モードは BIG/REG 前提（未入力は0扱いで判別に使う）
+  if (d.big === null && d.reg === null && d.games > 0) { d.big = 0; d.reg = 0; }
+  return d;
+}
+
+function updateToday() {
+  const d = readTodayData();
+  const err = validateDay(currentMachine, d);
+  const noData = $("noData"), body = $("resultBody"), lamp = $("gogoLamp");
+
+  if (err !== "" || !(d.games > 0)) {
+    noData.textContent = err
+      ? "⚠ " + err
+      : "総回転数とボーナス回数を入力すると、設定ごとの期待度をリアルタイム計算します。";
+    noData.classList.remove("hidden");
+    body.classList.add("hidden");
+    if (currentMode === "today") lamp.classList.remove("peka");
+    buildSpecTable(-1);
+    return;
+  }
+
+  const post = posteriorFromLL(dayLogLik(currentMachine, d), priorEl.value);
+  const m = currentMachine;
+  const sm = summarize(post, m);
+
+  noData.classList.add("hidden");
+  body.classList.remove("hidden");
+
+  $("topSetting").innerHTML =
+    `<span class="s${sm.topIdx + 1}">設定${sm.topIdx + 1}</span> <small style="font-size:12px">(${(post[sm.topIdx] * 100).toFixed(1)}%)</small>`;
+  $("p4plus").textContent = (sm.p4plus * 100).toFixed(1) + "%";
+  $("p56").textContent = (sm.p56 * 100).toFixed(1) + "%";
+  $("expPayout").textContent = sm.expPayout.toFixed(1) + "%";
+
+  if (currentMode === "today") $("gogoLamp").classList.toggle("peka", sm.p4plus > 0.6);
+
+  const barsEl = $("bars");
+  barsEl.innerHTML = "";
+  post.forEach((p, i) => {
+    const row = document.createElement("div");
+    row.className = "bar-row";
+    row.innerHTML =
+      `<div class="bar-label s${i + 1}">設定${i + 1}</div>` +
+      `<div class="bar-track"><div class="bar-fill f${i + 1}" style="width:${(p * 100).toFixed(2)}%"></div></div>` +
+      `<div class="bar-pct s${i + 1}">${(p * 100).toFixed(1)}%</div>`;
+    barsEl.appendChild(row);
+  });
+
+  const b = d.big ?? 0, r = d.reg ?? 0;
+  const stats = [];
+  stats.push(["BIG確率", b > 0 ? fmtInv(d.games / b) : "—"]);
+  stats.push(["REG確率", r > 0 ? fmtInv(d.games / r) : "—"]);
+  stats.push(["合算確率", b + r > 0 ? fmtInv(d.games / (b + r)) : "—"]);
+  if (d.grape !== null && d.grape > 0) stats.push(["ぶどう確率", fmtInv(d.games / d.grape)]);
+  if (d.cherry !== null && d.cherry > 0) stats.push(["チェリー確率", fmtInv(d.games / d.cherry)]);
+  if (d.soloReg !== null && d.soloReg > 0) stats.push(["単独REG確率", fmtInv(d.games / d.soloReg)]);
+  $("actualStats").innerHTML = stats
+    .map(([k, v]) => `<div class="stat-chip"><span class="k">${k}</span><span class="v">${v}</span></div>`)
+    .join("");
+
+  const note = $("sampleNote");
+  if (d.games < 1000) note.textContent = "▲ サンプルが少なめです（1000G未満）。判別精度は低い段階です。";
+  else if (d.games < 3000) note.textContent = "● 1000G以上。傾向は見えますが、3000G以上でより信頼できます。";
+  else note.textContent = "◎ 3000G以上。判別の信頼度が高いサンプル量です。";
+
+  buildSpecTable(sm.topIdx);
+}
+
+// ============ 過去データモード ============
+const DAY_LABELS = ["前日", "2日前", "3日前", "4日前", "5日前", "6日前", "7日前"];
+
+function addDayRow(data) {
+  if (pastDays.length >= MAX_DAYS) return;
+  pastDays.push(data || { games: "", big: "", reg: "", combo: "" });
+  renderDayRows();
+}
+
+function renderDayRows() {
+  const wrap = $("dayRows");
+  wrap.innerHTML = "";
+  pastDays.forEach((day, idx) => {
+    const row = document.createElement("div");
+    row.className = "day-row";
+    row.innerHTML =
+      `<div class="day-label">${DAY_LABELS[idx] || (idx + 1) + "日前"}</div>` +
+      `<input type="number" inputmode="numeric" min="0" placeholder="総回転数" data-idx="${idx}" data-key="games" value="${day.games}">` +
+      `<input type="number" inputmode="numeric" min="0" placeholder="BIG" data-idx="${idx}" data-key="big" value="${day.big}">` +
+      `<input type="number" inputmode="numeric" min="0" placeholder="REG" data-idx="${idx}" data-key="reg" value="${day.reg}">` +
+      `<input type="number" inputmode="numeric" min="0" placeholder="合算" data-idx="${idx}" data-key="combo" value="${day.combo}">` +
+      `<button class="day-del" data-idx="${idx}" title="この日を削除">✕</button>`;
+    wrap.appendChild(row);
+  });
+  wrap.querySelectorAll("input").forEach((el) =>
+    el.addEventListener("input", () => {
+      pastDays[+el.dataset.idx][el.dataset.key] = el.value;
+      updatePast();
+      save();
+    })
+  );
+  wrap.querySelectorAll(".day-del").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      pastDays.splice(+btn.dataset.idx, 1);
+      if (pastDays.length === 0) addDayRow();
+      renderDayRows();
+      updatePast();
+      save();
+    })
+  );
+  $("addDayBtn").disabled = pastDays.length >= MAX_DAYS;
+}
+
+function parseDay(day) {
+  const toInt = (v) => {
+    const t = String(v).trim();
+    if (t === "") return null;
+    const n = parseInt(t, 10);
+    return Number.isFinite(n) && n >= 0 ? n : null;
+  };
+  return {
+    games: toInt(day.games) ?? 0,
+    big: toInt(day.big), reg: toInt(day.reg), combo: toInt(day.combo),
+    grape: null, cherry: null, soloBig: null, chBig: null, soloReg: null, chReg: null,
+  };
+}
+
+function updatePast() {
+  const noData = $("pastNoData"), body = $("pastResultBody");
+  const m = currentMachine;
+  const results = [];   // {idx, post, sm, games} 有効日のみ
+  const errors = [];
+  let combinedLL = null;
+
+  pastDays.forEach((day, idx) => {
+    const d = parseDay(day);
+    // BIG/REGが両方空で合算だけある日は合算判別
+    if (d.big === null && d.reg === null && d.combo === null) return; // 未入力日
+    if (!(d.games > 0)) return;
+    const err = validateDay(m, d);
+    if (err) { errors.push(`${DAY_LABELS[idx]}: ${err}`); return; }
+    if (err === null) return;
+    const ll = dayLogLik(m, d);
+    combinedLL = combinedLL ? combinedLL.map((v, s) => v + ll[s]) : ll.slice();
+    results.push({ idx, games: d.games, post: posteriorFromLL(ll, priorEl.value), });
+  });
+
+  if (results.length === 0) {
+    noData.textContent = errors.length
+      ? "⚠ " + errors.join(" / ")
+      : "過去日のデータを1日分以上入力すると、高設定投入傾向を予想します。";
+    noData.classList.remove("hidden");
+    body.classList.add("hidden");
+    if (currentMode === "past") $("gogoLamp").classList.remove("peka");
+    return;
+  }
+
+  noData.classList.add("hidden");
+  body.classList.remove("hidden");
+
+  // 日別サマリー
+  const daySummaries = results.map((r) => ({ ...r, sm: summarize(r.post, m) }));
+  const avgP4 = daySummaries.reduce((a, r) => a + r.sm.p4plus, 0) / daySummaries.length;
+  const avgPayout = daySummaries.reduce((a, r) => a + r.sm.expPayout, 0) / daySummaries.length;
+
+  // 据え置き想定（全日同一設定と仮定して尤度合算）
+  const combinedPost = posteriorFromLL(combinedLL, priorEl.value);
+  const combinedSm = summarize(combinedPost, m);
+
+  $("pastP4avg").textContent = (avgP4 * 100).toFixed(1) + "%";
+  $("pastPayoutAvg").textContent = avgPayout.toFixed(1) + "%";
+  $("pastCombinedTop").innerHTML =
+    `<span class="s${combinedSm.topIdx + 1}">設定${combinedSm.topIdx + 1}</span> <small style="font-size:12px">(${(combinedPost[combinedSm.topIdx] * 100).toFixed(1)}%)</small>`;
+
+  if (currentMode === "past") $("gogoLamp").classList.toggle("peka", avgP4 > 0.5);
+
+  // コメント
+  let comment;
+  if (avgP4 >= 0.5) comment = "🔥 高設定が入りやすい傾向。狙い台として有力です。";
+  else if (avgP4 >= 0.3) comment = "✨ 高設定の可能性がそこそこある台。他の要素（並び・店の癖）と合わせて検討を。";
+  else if (avgP4 >= 0.15) comment = "△ 高設定の気配は薄め。無理に狙う根拠は弱いです。";
+  else comment = "✋ 低設定域のデータが続いています。この台への期待は控えめに。";
+  if (errors.length) comment += "（⚠ " + errors.join(" / ") + "）";
+  $("pastComment").textContent = comment;
+
+  // 日別結果リスト
+  $("dayResults").innerHTML = daySummaries.map((r) => {
+    const bars = r.post.map((p, i) =>
+      `<span class="mini-seg f${i + 1}" style="width:${(p * 100).toFixed(1)}%" title="設定${i + 1}: ${(p * 100).toFixed(1)}%"></span>`).join("");
+    return `<div class="day-result">
+      <span class="dr-label">${DAY_LABELS[r.idx] || (r.idx + 1) + "日前"}</span>
+      <span class="dr-games">${r.games.toLocaleString()}G</span>
+      <div class="mini-bar">${bars}</div>
+      <span class="dr-top s${r.sm.topIdx + 1}">設定${r.sm.topIdx + 1}</span>
+      <span class="dr-p4">4以上 ${(r.sm.p4plus * 100).toFixed(0)}%</span>
+    </div>`;
+  }).join("");
+}
+
+// ============ モード切替 ============
+function setMode(mode) {
+  currentMode = mode;
+  document.querySelectorAll(".mode-tab").forEach((t) =>
+    t.classList.toggle("active", t.dataset.mode === mode));
+  $("todayMode").classList.toggle("hidden", mode !== "today");
+  $("pastMode").classList.toggle("hidden", mode !== "past");
+  updateAll();
+}
+
+function updateAll() {
+  updateToday();
+  updatePast();
+  if (currentMode === "past") buildSpecTable(-1);
+}
+
+// ============ イベント ============
+todayFieldIds.forEach((id) => $(id).addEventListener("input", () => { updateToday(); save(); }));
+priorEl.addEventListener("change", () => { updateAll(); save(); });
+
+document.querySelectorAll(".mode-tab").forEach((t) =>
+  t.addEventListener("click", () => { setMode(t.dataset.mode); save(); }));
+
+document.querySelectorAll(".cnt-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const el = $(btn.dataset.target);
+    const cur = readIntFrom(el) ?? 0;
+    el.value = String(btn.classList.contains("plus") ? cur + 1 : Math.max(0, cur - 1));
+    updateToday();
+    save();
+  });
+});
+
+$("resetBtn").addEventListener("click", () => {
+  todayFieldIds.forEach((id) => ($(id).value = ""));
+  updateToday();
+  save();
+});
+
+$("addDayBtn").addEventListener("click", () => { addDayRow(); save(); });
+$("pastResetBtn").addEventListener("click", () => {
+  pastDays = [];
+  addDayRow();
+  updatePast();
+  save();
+});
+
+// ---- localStorage 保存/復元 ----
+const STORE_KEY = "gogo-judge-v2";
+function save() {
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify({
+      m: currentMachine.id,
+      mode: currentMode,
+      p: priorEl.value,
+      today: Object.fromEntries(todayFieldIds.map((id) => [id, $(id).value])),
+      days: pastDays,
+    }));
+  } catch (_) {}
+}
+function restore() {
+  try {
+    const d = JSON.parse(localStorage.getItem(STORE_KEY));
+    if (!d) return;
+    const m = MACHINES.find((x) => x.id === d.m);
+    if (m) currentMachine = m;
+    priorEl.value = d.p || "flat";
+    if (d.today) todayFieldIds.forEach((id) => ($(id).value = d.today[id] || ""));
+    if (Array.isArray(d.days) && d.days.length) pastDays = d.days.slice(0, MAX_DAYS);
+    if (d.mode === "past") currentMode = "past";
+  } catch (_) {}
+}
+
+// ---- 初期化 ----
+restore();
+if (pastDays.length === 0) pastDays.push({ games: "", big: "", reg: "", combo: "" });
+applyTheme(currentMachine);
+buildMachineList();
+updateDetailAvailability();
+renderDayRows();
+setMode(currentMode);
+
+// テストからも使えるように公開
+window.__jugglerJudge = { MACHINES, PRIORS, dayLogLik, posteriorFromLL, validateDay, summarize };
+
+</script>
+</body>
+</html>
